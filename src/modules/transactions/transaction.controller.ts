@@ -1,0 +1,166 @@
+import { Request, Response } from 'express';
+import { transactionService } from './transaction.service';
+import { ApiResponse } from '../../utils/apiResponse';
+import { logger } from '../../utils/logger';
+import {
+  initiateTransactionSchema,
+  transactionIdSchema,
+} from './transaction.validation';
+import { TransactionStatus } from '@prisma/client';
+
+class TransactionController {
+  /**
+   * Initiate a new transaction
+   * POST /api/v1/transactions
+   */
+  async initiateTransaction(req: Request, res: Response): Promise<void> {
+    try {
+      // Validate request body
+      const dto = initiateTransactionSchema.parse(req.body);
+
+      // Get customer ID from authenticated user
+      const customerId = req.user!.id;
+
+      // Initiate transaction
+      const result = await transactionService.initiate(customerId, dto);
+
+      ApiResponse.created(res, 'Transaction initiated successfully', result);
+    } catch (error: any) {
+      logger.error('Error in initiate transaction:', error);
+
+      if (error.message === 'Nozzle not found') {
+        return ApiResponse.notFound(res, error.message);
+      }
+
+      if (
+        error.message === 'Nozzle is not available' ||
+        error.message === 'Pump is not active'
+      ) {
+        return ApiResponse.badRequest(res, error.message);
+      }
+
+      if (error.message === 'WAVE_PAYMENT_FAILED') {
+        return ApiResponse.error(res, 'Failed to initiate Wave payment', error);
+      }
+
+      ApiResponse.error(res, 'Failed to initiate transaction', error);
+    }
+  }
+
+  /**
+   * Get all transactions with filters
+   * GET /api/v1/transactions
+   */
+  async getTransactions(req: Request, res: Response): Promise<void> {
+    try {
+      const filters = {
+        stationId: req.query.stationId as string | undefined,
+        userId: req.query.userId as string | undefined,
+        status: req.query.status as TransactionStatus | undefined,
+        startDate: req.query.startDate
+          ? new Date(req.query.startDate as string)
+          : undefined,
+        endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
+        page: req.query.page ? parseInt(req.query.page as string) : undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string) : undefined,
+      };
+
+      const result = await transactionService.findAll(filters);
+
+      ApiResponse.success(res, 'Transactions retrieved successfully', result.transactions, {
+        pagination: {
+          total: result.total,
+          page: result.page,
+          limit: result.limit,
+          totalPages: result.totalPages,
+        },
+      });
+    } catch (error: any) {
+      logger.error('Error in get transactions:', error);
+      ApiResponse.error(res, 'Failed to retrieve transactions', error);
+    }
+  }
+
+  /**
+   * Get transaction by ID
+   * GET /api/v1/transactions/:id
+   */
+  async getTransactionById(req: Request, res: Response): Promise<void> {
+    try {
+      // Validate transaction ID
+      const { id } = transactionIdSchema.parse(req.params);
+
+      const transaction = await transactionService.findById(id);
+
+      if (!transaction) {
+        return ApiResponse.notFound(res, 'Transaction not found');
+      }
+
+      ApiResponse.success(res, 'Transaction retrieved successfully', transaction);
+    } catch (error: any) {
+      logger.error('Error in get transaction by ID:', error);
+      ApiResponse.error(res, 'Failed to retrieve transaction', error);
+    }
+  }
+
+  /**
+   * Cancel a transaction
+   * DELETE /api/v1/transactions/:id
+   */
+  async cancelTransaction(req: Request, res: Response): Promise<void> {
+    try {
+      // Validate transaction ID
+      const { id } = transactionIdSchema.parse(req.params);
+
+      // Get user ID from authenticated user
+      const userId = req.user!.id;
+
+      await transactionService.cancel(id, userId);
+
+      ApiResponse.success(res, 'Transaction cancelled successfully');
+    } catch (error: any) {
+      logger.error('Error in cancel transaction:', error);
+
+      if (error.message === 'Transaction not found') {
+        return ApiResponse.notFound(res, error.message);
+      }
+
+      if (
+        error.message === 'You do not have permission to cancel this transaction' ||
+        error.message === 'Transaction cannot be cancelled'
+      ) {
+        return ApiResponse.badRequest(res, error.message);
+      }
+
+      ApiResponse.error(res, 'Failed to cancel transaction', error);
+    }
+  }
+
+  /**
+   * Wave payment webhook
+   * POST /api/v1/transactions/webhook/wave
+   */
+  async waveWebhook(req: Request, res: Response): Promise<void> {
+    try {
+      const { transaction_id, status } = req.body;
+
+      if (!transaction_id || !status) {
+        return ApiResponse.badRequest(res, 'Missing required webhook data');
+      }
+
+      await transactionService.handleWaveWebhook(transaction_id, status);
+
+      ApiResponse.success(res, 'Webhook processed successfully');
+    } catch (error: any) {
+      logger.error('Error in Wave webhook:', error);
+
+      if (error.message === 'Transaction not found') {
+        return ApiResponse.notFound(res, error.message);
+      }
+
+      ApiResponse.error(res, 'Failed to process webhook', error);
+    }
+  }
+}
+
+export const transactionController = new TransactionController();

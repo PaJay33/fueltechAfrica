@@ -15,6 +15,11 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 // Import routes
 import authRoutes from './modules/auth/auth.routes';
 import stationRoutes from './modules/stations/station.routes';
+import transactionRoutes from './modules/transactions/transaction.routes';
+
+// Import pump simulator and transaction service
+import { pumpSimulator } from '../simulator/pump.simulator';
+import { transactionService } from './modules/transactions/transaction.service';
 
 class Server {
   private app: Application;
@@ -103,6 +108,7 @@ class Server {
     // API routes
     this.app.use('/api/v1/auth', authRoutes);
     this.app.use('/api/v1/stations', stationRoutes);
+    this.app.use('/api/v1/transactions', transactionRoutes);
 
     // 404 handler
     this.app.use(notFoundHandler);
@@ -116,12 +122,39 @@ class Server {
   }
 
   /**
+   * Configure pump simulator event listeners
+   */
+  private configurePumpSimulator(): void {
+    // Listen for fueling complete event
+    pumpSimulator.on('fueling_complete', async (data: any) => {
+      try {
+        logger.info('Fueling complete event received:', data);
+        await transactionService.complete(data.transactionId, data.volumeDelivered);
+      } catch (error) {
+        logger.error('Error handling fueling complete event:', error);
+      }
+    });
+
+    // Listen for fuel data event (real-time updates)
+    pumpSimulator.on('fuel_data', (data: any) => {
+      logger.info('Fuel data:', {
+        transactionId: data.transactionId,
+        volumeDelivered: data.volumeDelivered,
+        flowRate: data.flowRate,
+      });
+    });
+  }
+
+  /**
    * Start the server
    */
   async start(): Promise<void> {
     try {
       // Connect to database
       await Database.connect();
+
+      // Configure pump simulator
+      this.configurePumpSimulator();
 
       // Start listening
       const PORT = env.PORT || 3000;
