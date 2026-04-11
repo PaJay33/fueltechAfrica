@@ -14,6 +14,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 // Import routes
 import authRoutes from './modules/auth/auth.routes';
+import stationRoutes from './modules/stations/station.routes';
 
 class Server {
   private app: Application;
@@ -101,6 +102,7 @@ class Server {
 
     // API routes
     this.app.use('/api/v1/auth', authRoutes);
+    this.app.use('/api/v1/stations', stationRoutes);
 
     // 404 handler
     this.app.use(notFoundHandler);

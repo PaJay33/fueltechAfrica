@@ -133,7 +133,7 @@ model Station {
 model Pump {
   id          String      @id @default(cuid())
   name        String      // Ex: "Pompe 1"
-  code        String      @unique // Code unique (ex: PUMP-001)
+  code        String      // Code unique par station (ex: PUMP-001)
   stationId   String
   status      PumpStatus  @default(ACTIVE)
   serialNumber String?    @unique
@@ -149,6 +149,7 @@ model Pump {
   station     Station     @relation(fields: [stationId], references: [id], onDelete: Cascade)
   nozzles     Nozzle[]
 
+  @@unique([code, stationId]) // Code must be unique per station
   @@index([stationId])
   @@index([code])
   @@index([status])
@@ -157,7 +158,7 @@ model Pump {
 
 model Nozzle {
   id          String        @id @default(cuid())
-  code        String        @unique // Code unique (ex: NOZ-001)
+  code        String        // Code unique par pompe (ex: NOZ-001)
   pumpId      String
   fuelType    FuelType
   status      NozzleStatus  @default(AVAILABLE)
@@ -174,6 +175,7 @@ model Nozzle {
   pump        Pump          @relation(fields: [pumpId], references: [id], onDelete: Cascade)
   transactions Transaction[]
 
+  @@unique([code, pumpId]) // Code must be unique per pump
   @@index([pumpId])
   @@index([fuelType])
   @@index([status])
