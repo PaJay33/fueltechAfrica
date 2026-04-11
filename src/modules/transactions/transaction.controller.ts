@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { transactionService } from './transaction.service';
+import { waveService } from './wave.service';
 import { ApiResponse } from '../../utils/apiResponse';
 import { logger } from '../../utils/logger';
 import {
@@ -142,17 +143,22 @@ class TransactionController {
    */
   async waveWebhook(req: Request, res: Response): Promise<void> {
     try {
-      const { transaction_id, status } = req.body;
+      // Get signature from headers
+      const signature = req.headers['x-wave-signature'] as string | undefined;
 
-      if (!transaction_id || !status) {
-        return ApiResponse.badRequest(res, 'Missing required webhook data');
-      }
+      // Process webhook through Wave service
+      const { transactionId, status } = waveService.handleWebhook(req.body, signature);
 
-      await transactionService.handleWaveWebhook(transaction_id, status);
+      // Update transaction status
+      await transactionService.handleWaveWebhook(transactionId, status);
 
       ApiResponse.success(res, 'Webhook processed successfully');
     } catch (error: any) {
       logger.error('Error in Wave webhook:', error);
+
+      if (error.message === 'Invalid webhook signature') {
+        return ApiResponse.unauthorized(res, error.message);
+      }
 
       if (error.message === 'Transaction not found') {
         return ApiResponse.notFound(res, error.message);

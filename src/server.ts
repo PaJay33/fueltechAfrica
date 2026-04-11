@@ -1,4 +1,5 @@
 import express, { Application, Request, Response } from 'express';
+import { createServer, Server as HTTPServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -11,11 +12,13 @@ import { Database } from './config/database';
 import { logger } from './utils/logger';
 import { ApiResponse } from './utils/apiResponse';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { initializeSocket } from './config/socket';
 
 // Import routes
 import authRoutes from './modules/auth/auth.routes';
 import stationRoutes from './modules/stations/station.routes';
 import transactionRoutes from './modules/transactions/transaction.routes';
+import reportRoutes from './modules/reports/report.routes';
 
 // Import pump simulator and transaction service
 import { pumpSimulator } from '../simulator/pump.simulator';
@@ -23,9 +26,11 @@ import { transactionService } from './modules/transactions/transaction.service';
 
 class Server {
   private app: Application;
+  private httpServer: HTTPServer;
 
   constructor() {
     this.app = express();
+    this.httpServer = createServer(this.app);
     this.configureMiddleware();
     this.configureRoutes();
     this.configureErrorHandling();
@@ -109,6 +114,7 @@ class Server {
     this.app.use('/api/v1/auth', authRoutes);
     this.app.use('/api/v1/stations', stationRoutes);
     this.app.use('/api/v1/transactions', transactionRoutes);
+    this.app.use('/api/v1/reports', reportRoutes);
 
     // 404 handler
     this.app.use(notFoundHandler);
@@ -153,13 +159,16 @@ class Server {
       // Connect to database
       await Database.connect();
 
+      // Initialize Socket.IO
+      initializeSocket(this.httpServer);
+
       // Configure pump simulator
       this.configurePumpSimulator();
 
       // Start listening
       const PORT = env.PORT || 3000;
 
-      this.app.listen(PORT, () => {
+      this.httpServer.listen(PORT, () => {
         logger.info(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
@@ -168,6 +177,7 @@ class Server {
 ║   Environment: ${env.NODE_ENV.padEnd(42)} ║
 ║   Port:        ${String(PORT).padEnd(42)} ║
 ║   URL:         http://localhost:${PORT}${' '.repeat(23)} ║
+║   WebSocket:   ws://localhost:${PORT}${' '.repeat(24)} ║
 ║                                                           ║
 ║   Health:      http://localhost:${PORT}/health${' '.repeat(17)} ║
 ║   API Docs:    http://localhost:${PORT}/api${' '.repeat(20)} ║

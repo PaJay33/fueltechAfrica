@@ -1,8 +1,10 @@
 import { EventEmitter } from 'events';
 import { logger } from '../src/utils/logger';
+import { getIO } from '../src/config/socket';
 
 interface FuelDataEvent {
   transactionId: string;
+  stationId: string;
   volumeDelivered: number;
   flowRate: number;
   timestamp: Date;
@@ -10,12 +12,14 @@ interface FuelDataEvent {
 
 interface FuelingCompleteEvent {
   transactionId: string;
+  stationId: string;
   volumeDelivered: number;
   finalAmount: number;
 }
 
 interface ActiveFueling {
   transactionId: string;
+  stationId: string;
   maxAmount: number;
   pricePerLiter: number;
   volumeDelivered: number;
@@ -34,7 +38,8 @@ class PumpSimulator extends EventEmitter {
     transactionId: string,
     nozzleId: string,
     maxAmount: number,
-    pricePerLiter: number
+    pricePerLiter: number,
+    stationId: string
   ): Promise<void> {
     try {
       // Simulate network delay
@@ -44,11 +49,12 @@ class PumpSimulator extends EventEmitter {
         nozzleId,
         maxAmount,
         pricePerLiter,
+        stationId,
       });
 
       // Wait 2 seconds before starting fueling
       setTimeout(() => {
-        this.simulateFueling(transactionId, maxAmount, pricePerLiter);
+        this.simulateFueling(transactionId, maxAmount, pricePerLiter, stationId);
       }, 2000);
     } catch (error) {
       logger.error(`Error authorizing pump for transaction ${transactionId}:`, error);
@@ -62,7 +68,8 @@ class PumpSimulator extends EventEmitter {
   private simulateFueling(
     transactionId: string,
     maxAmount: number,
-    pricePerLiter: number
+    pricePerLiter: number,
+    stationId: string
   ): void {
     let volumeDelivered = 0;
 
@@ -76,11 +83,20 @@ class PumpSimulator extends EventEmitter {
       // Emit fuel data event
       const fuelData: FuelDataEvent = {
         transactionId,
+        stationId,
         volumeDelivered: Math.round(volumeDelivered * 100) / 100,
         flowRate: this.FLOW_RATE,
         timestamp: new Date(),
       };
       this.emit('fuel_data', fuelData);
+
+      // Emit via WebSocket to station room
+      try {
+        const io = getIO();
+        io.to(`station:${stationId}`).emit('fuel_data', fuelData);
+      } catch (error) {
+        // Socket.IO not initialized yet, skip WebSocket emission
+      }
 
       // Check if we've reached the max amount
       if (currentAmount >= maxAmount) {
@@ -97,16 +113,26 @@ class PumpSimulator extends EventEmitter {
         // Emit completion event
         const completeData: FuelingCompleteEvent = {
           transactionId,
+          stationId,
           volumeDelivered: Math.round(volumeDelivered * 100) / 100,
           finalAmount,
         };
         this.emit('fueling_complete', completeData);
+
+        // Emit via WebSocket to station room
+        try {
+          const io = getIO();
+          io.to(`station:${stationId}`).emit('fueling_complete', completeData);
+        } catch (error) {
+          // Socket.IO not initialized yet, skip WebSocket emission
+        }
       }
     }, this.TICK_INTERVAL);
 
     // Store active fueling
     this.activeFuelings.set(transactionId, {
       transactionId,
+      stationId,
       maxAmount,
       pricePerLiter,
       volumeDelivered,
@@ -131,6 +157,7 @@ class PumpSimulator extends EventEmitter {
       // Emit completion event with current volume
       const completeData: FuelingCompleteEvent = {
         transactionId,
+        stationId: activeFueling.stationId,
         volumeDelivered: Math.round(activeFueling.volumeDelivered * 100) / 100,
         finalAmount: Math.round(activeFueling.volumeDelivered * activeFueling.pricePerLiter),
       };

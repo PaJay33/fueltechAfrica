@@ -233,7 +233,8 @@ class TransactionService {
           transaction.id,
           dto.nozzleId,
           dto.presetAmount,
-          nozzle.pricePerLiter
+          nozzle.pricePerLiter,
+          nozzle.pump.stationId
         );
 
         logger.info(`Pump authorized for transaction ${transaction.id}`);
@@ -286,7 +287,8 @@ class TransactionService {
           transaction.id,
           transaction.nozzleId,
           transaction.totalAmount,
-          transaction.pricePerLiter
+          transaction.pricePerLiter,
+          transaction.stationId
         );
 
         logger.info(`Pump authorized after Wave payment for transaction ${transaction.id}`);
