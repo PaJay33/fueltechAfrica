@@ -1,0 +1,252 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  OWNER       // Propriétaire de station(s)
+  MANAGER     // Gérant de station
+  ATTENDANT   // Pompiste
+  CUSTOMER    // Client
+}
+
+enum FuelType {
+  SUPER
+  DIESEL
+  ORDINAIRE
+}
+
+enum TransactionStatus {
+  PENDING         // En attente de paiement
+  PROCESSING      // Paiement en cours
+  COMPLETED       // Terminée avec succès
+  FAILED          // Échouée
+  CANCELLED       // Annulée
+  REFUNDED        // Remboursée
+  PARTIALLY_REFUNDED // Partiellement remboursée
+}
+
+enum PaymentMethod {
+  CASH            // Espèces
+  WAVE            // Wave
+  ORANGE_MONEY    // Orange Money
+  FREE_MONEY      // Free Money
+  CREDIT_CARD     // Carte bancaire
+}
+
+enum PumpStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum NozzleStatus {
+  AVAILABLE
+  IN_USE
+  MAINTENANCE
+  OUT_OF_ORDER
+}
+
+enum StationStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?  @unique
+  password     String
+  firstName    String
+  lastName     String
+  role         UserRole @default(CUSTOMER)
+  isActive     Boolean  @default(true)
+  isVerified   Boolean  @default(false)
+  emailVerifiedAt DateTime?
+  lastLoginAt  DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  ownedStations    Station[]       @relation("StationOwner")
+  managedStations  Station[]       @relation("StationManager")
+  transactions     Transaction[]
+  refreshTokens    RefreshToken[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([role])
+  @@map("users")
+}
+
+model Station {
+  id          String        @id @default(cuid())
+  name        String
+  code        String        @unique // Code unique de la station (ex: STA-DKR-001)
+  address     String
+  city        String
+  region      String
+  country     String        @default("Senegal")
+  latitude    Float?
+  longitude   Float?
+  phone       String?
+  email       String?
+  status      StationStatus @default(ACTIVE)
+
+  ownerId     String
+  managerId   String?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  owner       User          @relation("StationOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  manager     User?         @relation("StationManager", fields: [managerId], references: [id], onDelete: SetNull)
+  pumps       Pump[]
+  transactions Transaction[]
+
+  @@index([ownerId])
+  @@index([managerId])
+  @@index([code])
+  @@index([status])
+  @@map("stations")
+}
+
+model Pump {
+  id          String      @id @default(cuid())
+  name        String      // Ex: "Pompe 1"
+  code        String      @unique // Code unique (ex: PUMP-001)
+  stationId   String
+  status      PumpStatus  @default(ACTIVE)
+  serialNumber String?    @unique
+  manufacturer String?
+  model       String?
+  installDate DateTime?
+  lastMaintenanceDate DateTime?
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  station     Station     @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  nozzles     Nozzle[]
+
+  @@index([stationId])
+  @@index([code])
+  @@index([status])
+  @@map("pumps")
+}
+
+model Nozzle {
+  id          String        @id @default(cuid())
+  code        String        @unique // Code unique (ex: NOZ-001)
+  pumpId      String
+  fuelType    FuelType
+  status      NozzleStatus  @default(AVAILABLE)
+  pricePerLiter Float       // Prix au litre en FCFA
+
+  // Compteurs
+  totalVolume Float         @default(0) // Volume total distribué (litres)
+  totalAmount Float         @default(0) // Montant total vendu (FCFA)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  pump        Pump          @relation(fields: [pumpId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([pumpId])
+  @@index([fuelType])
+  @@index([status])
+  @@map("nozzles")
+}
+
+model Transaction {
+  id              String            @id @default(cuid())
+  transactionCode String            @unique // Code unique (ex: TXN-20240101-001)
+
+  stationId       String
+  nozzleId        String
+  userId          String?           // Peut être null pour les clients non enregistrés
+  attendantId     String?           // Pompiste qui a effectué la transaction
+
+  fuelType        FuelType
+  volume          Float             // Litres
+  pricePerLiter   Float             // Prix au moment de la transaction (FCFA)
+  totalAmount     Float             // Montant total (FCFA)
+
+  paymentMethod   PaymentMethod
+  status          TransactionStatus @default(PENDING)
+
+  // Paiement Wave
+  waveTransactionId String?         @unique
+  wavePaymentUrl    String?
+
+  // Métadonnées
+  startedAt       DateTime          @default(now())
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  refundedAt      DateTime?
+
+  metadata        Json?             // Données additionnelles flexibles
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  // Relations
+  station         Station           @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  nozzle          Nozzle            @relation(fields: [nozzleId], references: [id], onDelete: Restrict)
+  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([stationId])
+  @@index([nozzleId])
+  @@index([userId])
+  @@index([attendantId])
+  @@index([status])
+  @@index([transactionCode])
+  @@index([waveTransactionId])
+  @@index([startedAt])
+  @@map("transactions")
+}
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  token       String   @unique
+  userId      String
+  expiresAt   DateTime
+  isRevoked   Boolean  @default(false)
+
+  // Device/Session info
+  userAgent   String?
+  ipAddress   String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
