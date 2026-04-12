@@ -25,7 +25,7 @@ class TransactionController {
       // Initiate transaction
       const result = await transactionService.initiate(customerId, dto);
 
-      ApiResponse.created(res, 'Transaction initiated successfully', result);
+      return ApiResponse.created(res, result, 'Transaction initiated successfully');
     } catch (error: any) {
       logger.error('Error in initiate transaction:', error);
 
@@ -41,10 +41,10 @@ class TransactionController {
       }
 
       if (error.message === 'WAVE_PAYMENT_FAILED') {
-        return ApiResponse.error(res, 'Failed to initiate Wave payment', error);
+        return ApiResponse.error(res, 'Failed to initiate Wave payment', 500, error);
       }
 
-      ApiResponse.error(res, 'Failed to initiate transaction', error);
+      return ApiResponse.error(res, 'Failed to initiate transaction', 500, error);
     }
   }
 
@@ -68,17 +68,10 @@ class TransactionController {
 
       const result = await transactionService.findAll(filters);
 
-      ApiResponse.success(res, 'Transactions retrieved successfully', result.transactions, {
-        pagination: {
-          total: result.total,
-          page: result.page,
-          limit: result.limit,
-          totalPages: result.totalPages,
-        },
-      });
+      return ApiResponse.success(res, result, 'Transactions retrieved successfully');
     } catch (error: any) {
       logger.error('Error in get transactions:', error);
-      ApiResponse.error(res, 'Failed to retrieve transactions', error);
+      return ApiResponse.error(res, 'Failed to retrieve transactions', 500, error);
     }
   }
 
@@ -97,10 +90,10 @@ class TransactionController {
         return ApiResponse.notFound(res, 'Transaction not found');
       }
 
-      ApiResponse.success(res, 'Transaction retrieved successfully', transaction);
+      return ApiResponse.success(res, transaction, 'Transaction retrieved successfully');
     } catch (error: any) {
       logger.error('Error in get transaction by ID:', error);
-      ApiResponse.error(res, 'Failed to retrieve transaction', error);
+      return ApiResponse.error(res, 'Failed to retrieve transaction', 500, error);
     }
   }
 
@@ -118,7 +111,7 @@ class TransactionController {
 
       await transactionService.cancel(id, userId);
 
-      ApiResponse.success(res, 'Transaction cancelled successfully');
+      return ApiResponse.success(res, null, 'Transaction cancelled successfully');
     } catch (error: any) {
       logger.error('Error in cancel transaction:', error);
 
@@ -133,7 +126,7 @@ class TransactionController {
         return ApiResponse.badRequest(res, error.message);
       }
 
-      ApiResponse.error(res, 'Failed to cancel transaction', error);
+      return ApiResponse.error(res, 'Failed to cancel transaction', 500, error);
     }
   }
 
@@ -152,7 +145,7 @@ class TransactionController {
       // Update transaction status
       await transactionService.handleWaveWebhook(transactionId, status);
 
-      ApiResponse.success(res, 'Webhook processed successfully');
+      return ApiResponse.success(res, null, 'Webhook processed successfully');
     } catch (error: any) {
       logger.error('Error in Wave webhook:', error);
 
@@ -164,7 +157,7 @@ class TransactionController {
         return ApiResponse.notFound(res, error.message);
       }
 
-      ApiResponse.error(res, 'Failed to process webhook', error);
+      return ApiResponse.error(res, 'Failed to process webhook', 500, error);
     }
   }
 }

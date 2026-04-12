@@ -27,7 +27,7 @@ class StationController {
       // Create station
       const station = await stationService.create(ownerId, dto);
 
-      ApiResponse.created(res, 'Station created successfully', station);
+      return ApiResponse.created(res, station, 'Station created successfully');
     } catch (error: any) {
       logger.error('Error in create station:', error);
 
@@ -35,7 +35,7 @@ class StationController {
         return ApiResponse.badRequest(res, error.message);
       }
 
-      ApiResponse.error(res, 'Failed to create station', error);
+      return ApiResponse.error(res, 'Failed to create station', 500, error);
     }
   }
 
@@ -57,17 +57,10 @@ class StationController {
 
       const result = await stationService.findAll(filters);
 
-      ApiResponse.success(res, 'Stations retrieved successfully', result.stations, {
-        pagination: {
-          total: result.total,
-          page: result.page,
-          limit: result.limit,
-          totalPages: result.totalPages,
-        },
-      });
+      return ApiResponse.success(res, result, 'Stations retrieved successfully');
     } catch (error: any) {
       logger.error('Error in find all stations:', error);
-      ApiResponse.error(res, 'Failed to retrieve stations', error);
+      return ApiResponse.error(res, 'Failed to retrieve stations', 500, error);
     }
   }
 
@@ -86,10 +79,10 @@ class StationController {
         return ApiResponse.notFound(res, 'Station not found');
       }
 
-      ApiResponse.success(res, 'Station retrieved successfully', station);
+      return ApiResponse.success(res, station, 'Station retrieved successfully');
     } catch (error: any) {
       logger.error('Error in find station by ID:', error);
-      ApiResponse.error(res, 'Failed to retrieve station', error);
+      return ApiResponse.error(res, 'Failed to retrieve station', 500, error);
     }
   }
 
@@ -117,7 +110,7 @@ class StationController {
       // Update station
       const station = await stationService.update(id, dto);
 
-      ApiResponse.success(res, 'Station updated successfully', station);
+      return ApiResponse.success(res, station, 'Station updated successfully');
     } catch (error: any) {
       logger.error('Error in update station:', error);
 
@@ -129,7 +122,7 @@ class StationController {
         return ApiResponse.badRequest(res, error.message);
       }
 
-      ApiResponse.error(res, 'Failed to update station', error);
+      return ApiResponse.error(res, 'Failed to update station', 500, error);
     }
   }
 
@@ -153,7 +146,7 @@ class StationController {
 
       await stationService.delete(id);
 
-      ApiResponse.success(res, 'Station deleted successfully');
+      return ApiResponse.success(res, null, 'Station deleted successfully');
     } catch (error: any) {
       logger.error('Error in delete station:', error);
 
@@ -161,7 +154,7 @@ class StationController {
         return ApiResponse.notFound(res, error.message);
       }
 
-      ApiResponse.error(res, 'Failed to delete station', error);
+      return ApiResponse.error(res, 'Failed to delete station', 500, error);
     }
   }
 
@@ -174,10 +167,10 @@ class StationController {
       const ownerId = req.user!.id;
       const stations = await stationService.findByOwnerId(ownerId);
 
-      ApiResponse.success(res, 'Your stations retrieved successfully', stations);
+      return ApiResponse.success(res, stations, 'Your stations retrieved successfully');
     } catch (error: any) {
       logger.error('Error in get my stations:', error);
-      ApiResponse.error(res, 'Failed to retrieve your stations', error);
+      return ApiResponse.error(res, 'Failed to retrieve your stations', 500, error);
     }
   }
 
@@ -224,10 +217,10 @@ class StationController {
         },
       };
 
-      ApiResponse.success(res, 'Station statistics retrieved successfully', stats);
+      return ApiResponse.success(res, stats, 'Station statistics retrieved successfully');
     } catch (error: any) {
       logger.error('Error in get station stats:', error);
-      ApiResponse.error(res, 'Failed to retrieve station statistics', error);
+      return ApiResponse.error(res, 'Failed to retrieve station statistics', 500, error);
     }
   }
 
@@ -259,7 +252,7 @@ class StationController {
         return ApiResponse.badRequest(res, error.message);
       }
 
-      ApiResponse.error(res, 'Failed to add pump to station', error);
+      return ApiResponse.error(res, 'Failed to add pump to station', 500, error);
     }
   }
 
@@ -295,7 +288,7 @@ class StationController {
         return ApiResponse.badRequest(res, error.message);
       }
 
-      ApiResponse.error(res, 'Failed to add nozzle to pump', error);
+      return ApiResponse.error(res, 'Failed to add nozzle to pump', 500, error);
     }
   }
 }
