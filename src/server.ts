@@ -19,6 +19,8 @@ import authRoutes from './modules/auth/auth.routes';
 import stationRoutes from './modules/stations/station.routes';
 import transactionRoutes from './modules/transactions/transaction.routes';
 import reportRoutes from './modules/reports/report.routes';
+import cashierRoutes from './modules/cashier/cashier.routes';
+import userRoutes from './modules/users/user.routes';
 
 // Import pump simulator and transaction service
 import { pumpSimulator } from '../simulator/pump.simulator';
@@ -115,6 +117,8 @@ class Server {
     this.app.use('/api/v1/stations', stationRoutes);
     this.app.use('/api/v1/transactions', transactionRoutes);
     this.app.use('/api/v1/reports', reportRoutes);
+    this.app.use('/api/v1/cashier', cashierRoutes);
+    this.app.use('/api/v1/users', userRoutes);
 
     // 404 handler
     this.app.use(notFoundHandler);

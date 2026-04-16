@@ -65,6 +65,11 @@ enum StationStatus {
   SUSPENDED
 }
 
+enum SessionStatus {
+  OPEN
+  CLOSED
+}
+
 // ============================================
 // MODELS
 // ============================================
@@ -82,18 +87,25 @@ model User {
   emailVerifiedAt DateTime?
   lastLoginAt  DateTime?
 
+  // Cashier specific fields
+  pin          String?  // Code PIN 4 chiffres (hashé bcrypt)
+  stationId    String?  // Station assignée à cet employé
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   // Relations
   ownedStations    Station[]       @relation("StationOwner")
   managedStations  Station[]       @relation("StationManager")
+  station          Station?        @relation("StationAttendants", fields: [stationId], references: [id])
   transactions     Transaction[]
   refreshTokens    RefreshToken[]
+  cashierSessions  CashierSession[]
 
   @@index([email])
   @@index([phone])
   @@index([role])
+  @@index([stationId])
   @@map("users")
 }
 
@@ -120,8 +132,10 @@ model Station {
   // Relations
   owner       User          @relation("StationOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   manager     User?         @relation("StationManager", fields: [managerId], references: [id], onDelete: SetNull)
+  attendants  User[]        @relation("StationAttendants")
   pumps       Pump[]
   transactions Transaction[]
+  cashierSessions CashierSession[]
 
   @@index([ownerId])
   @@index([managerId])
@@ -190,6 +204,7 @@ model Transaction {
   nozzleId        String
   userId          String?           // Peut être null pour les clients non enregistrés
   attendantId     String?           // Pompiste qui a effectué la transaction
+  sessionId       String?           // Session de caisse
 
   fuelType        FuelType
   volume          Float             // Litres
@@ -218,11 +233,13 @@ model Transaction {
   station         Station           @relation(fields: [stationId], references: [id], onDelete: Restrict)
   nozzle          Nozzle            @relation(fields: [nozzleId], references: [id], onDelete: Restrict)
   user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session         CashierSession?   @relation(fields: [sessionId], references: [id])
 
   @@index([stationId])
   @@index([nozzleId])
   @@index([userId])
   @@index([attendantId])
+  @@index([sessionId])
   @@index([status])
   @@index([transactionCode])
   @@index([waveTransactionId])
@@ -251,4 +268,35 @@ model RefreshToken {
   @@index([token])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+model CashierSession {
+  id                String        @id @default(cuid())
+  attendantId       String
+  stationId         String
+  status            SessionStatus @default(OPEN)
+  openedAt          DateTime      @default(now())
+  closedAt          DateTime?
+
+  totalRevenue      Float         @default(0)
+  totalVolume       Float         @default(0)
+  totalTransactions Int           @default(0)
+  cashAmount        Float         @default(0)
+  waveAmount        Float         @default(0)
+  orangeMoneyAmount Float         @default(0)
+
+  notes             String?
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relations
+  attendant         User          @relation(fields: [attendantId], references: [id])
+  station           Station       @relation(fields: [stationId], references: [id])
+  transactions      Transaction[]
+
+  @@index([attendantId])
+  @@index([stationId])
+  @@index([status])
+  @@map("cashier_sessions")
 }
