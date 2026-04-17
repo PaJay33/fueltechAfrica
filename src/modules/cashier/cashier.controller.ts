@@ -11,6 +11,7 @@ const loginWithPinSchema = z.object({
 });
 
 const closeSessionSchema = z.object({
+  closingCashAmount: z.number().min(0, 'Closing cash amount must be positive'),
   notes: z.string().optional(),
 });
 
@@ -49,36 +50,21 @@ class CashierController {
    */
   async closeSession(req: Request, res: Response): Promise<void> {
     try {
-      const { notes } = closeSessionSchema.parse(req.body);
+      const { closingCashAmount, notes } = closeSessionSchema.parse(req.body);
       const attendantId = req.user!.id;
-      const sessionId = (req.user as any).sessionId;
 
-      if (!sessionId) {
-        ApiResponse.badRequest(res, 'No active session found');
-        return;
-      }
-
-      const closedSession = await cashierService.closeSession(sessionId, attendantId);
-
-      // Update notes if provided
-      if (notes) {
-        // Note: You could update the session with notes here if needed
-      }
+      const closedSession = await cashierService.closeSession(
+        attendantId,
+        closingCashAmount,
+        notes
+      );
 
       ApiResponse.success(res, closedSession, 'Session closed successfully');
     } catch (error: any) {
       logger.error('Error in close session:', error);
 
-      if (error.message === 'Session not found') {
+      if (error.message === 'No active session found') {
         ApiResponse.notFound(res, error.message);
-        return;
-      }
-
-      if (
-        error.message === 'You do not have permission to close this session' ||
-        error.message === 'Session is already closed'
-      ) {
-        ApiResponse.badRequest(res, error.message);
         return;
       }
 
@@ -133,6 +119,28 @@ class CashierController {
       }
 
       ApiResponse.error(res, 'Failed to retrieve session report', 500, error);
+    }
+  }
+
+  /**
+   * Get session summary for a station
+   * GET /api/v1/cashier/station/:stationId/summary
+   */
+  async getSessionSummary(req: Request, res: Response): Promise<void> {
+    try {
+      const { stationId } = req.params;
+
+      if (!stationId) {
+        ApiResponse.badRequest(res, 'Station ID is required');
+        return;
+      }
+
+      const summary = await cashierService.getSessionSummary(stationId);
+
+      ApiResponse.success(res, summary, 'Session summary retrieved successfully');
+    } catch (error: any) {
+      logger.error('Error in get session summary:', error);
+      ApiResponse.error(res, 'Failed to retrieve session summary', 500, error);
     }
   }
 }

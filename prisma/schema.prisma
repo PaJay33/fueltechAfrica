@@ -278,6 +278,13 @@ model CashierSession {
   openedAt          DateTime      @default(now())
   closedAt          DateTime?
 
+  // Gestion du fond de caisse
+  openingCashAmount     Float   @default(0)  // Montant trouvé à l'ouverture
+  closingCashAmount     Float?               // Montant compté à la fermeture
+  theoreticalCashAmount Float   @default(0)  // Montant théorique (calculé)
+  cashDifference        Float?               // Écart (compté - théorique)
+  previousSessionId     String?              // Session précédente
+
   totalRevenue      Float         @default(0)
   totalVolume       Float         @default(0)
   totalTransactions Int           @default(0)
@@ -298,5 +305,6 @@ model CashierSession {
   @@index([attendantId])
   @@index([stationId])
   @@index([status])
+  @@index([previousSessionId])
   @@map("cashier_sessions")
 }

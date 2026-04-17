@@ -72,8 +72,29 @@ class CashierService {
           email: matchedAttendant.email,
           role: matchedAttendant.role,
         },
+        station: matchedAttendant.station,
       };
     }
+
+    // Find last closed session to get opening cash amount
+    const lastSession = await prisma.cashierSession.findFirst({
+      where: {
+        stationId,
+        status: 'CLOSED'
+      },
+      orderBy: { closedAt: 'desc' },
+      include: {
+        attendant: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    const openingCashAmount = lastSession?.closingCashAmount || 0;
 
     // Create new session
     const session = await prisma.cashierSession.create({
@@ -81,6 +102,8 @@ class CashierService {
         attendantId: matchedAttendant.id,
         stationId,
         status: 'OPEN',
+        openingCashAmount,
+        previousSessionId: lastSession?.id || null,
       },
       include: {
         station: true,
@@ -124,6 +147,12 @@ class CashierService {
         email: matchedAttendant.email,
         role: matchedAttendant.role,
       },
+      station: matchedAttendant.station,
+      previousSession: lastSession ? {
+        closingCashAmount: lastSession.closingCashAmount,
+        attendant: lastSession.attendant,
+        closedAt: lastSession.closedAt,
+      } : null,
     };
   }
 
@@ -131,68 +160,62 @@ class CashierService {
    * Close session
    * Calculate totals from transactions and close the session
    */
-  async closeSession(sessionId: string, attendantId: string) {
-    // Find session
-    const session = await prisma.cashierSession.findUnique({
-      where: { id: sessionId },
-      include: {
-        transactions: {
-          where: {
-            status: 'COMPLETED',
-          },
-        },
-        attendant: true,
-        station: true,
+  async closeSession(attendantId: string, closingCashAmount: number, notes?: string) {
+    // Find the active (OPEN) session for this attendant
+    const session = await prisma.cashierSession.findFirst({
+      where: {
+        attendantId,
+        status: 'OPEN'
       },
+      orderBy: { openedAt: 'desc' }
     });
 
     if (!session) {
-      throw new Error('Session not found');
+      throw new Error('No active session found');
     }
 
-    if (session.attendantId !== attendantId) {
-      throw new Error('You do not have permission to close this session');
-    }
-
-    if (session.status === 'CLOSED') {
-      throw new Error('Session is already closed');
-    }
-
-    // Calculate totals
-    const totals = session.transactions.reduce(
-      (acc, tx) => {
-        acc.totalRevenue += tx.totalAmount;
-        acc.totalVolume += tx.volume;
-        acc.totalTransactions += 1;
-
-        // Count by payment method
-        if (tx.paymentMethod === 'CASH') {
-          acc.cashAmount += tx.totalAmount;
-        } else if (tx.paymentMethod === 'WAVE') {
-          acc.waveAmount += tx.totalAmount;
-        } else if (tx.paymentMethod === 'ORANGE_MONEY') {
-          acc.orangeMoneyAmount += tx.totalAmount;
-        }
-
-        return acc;
-      },
-      {
-        totalRevenue: 0,
-        totalVolume: 0,
-        totalTransactions: 0,
-        cashAmount: 0,
-        waveAmount: 0,
-        orangeMoneyAmount: 0,
+    // Get all completed transactions for this session
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        sessionId: session.id,
+        status: 'COMPLETED'
       }
-    );
+    });
 
-    // Update session
+    // Calculate totals by payment method
+    const cashAmount = transactions
+      .filter(t => t.paymentMethod === 'CASH')
+      .reduce((sum, t) => sum + t.totalAmount, 0);
+
+    const waveAmount = transactions
+      .filter(t => t.paymentMethod === 'WAVE')
+      .reduce((sum, t) => sum + t.totalAmount, 0);
+
+    const orangeMoneyAmount = transactions
+      .filter(t => t.paymentMethod === 'ORANGE_MONEY')
+      .reduce((sum, t) => sum + t.totalAmount, 0);
+
+    const totalRevenue = transactions.reduce((sum, t) => sum + t.totalAmount, 0);
+    const totalVolume = transactions.reduce((sum, t) => sum + t.volume, 0);
+    const theoreticalCashAmount = session.openingCashAmount + cashAmount;
+    const cashDifference = closingCashAmount - theoreticalCashAmount;
+
+    // Update session to CLOSED
     const closedSession = await prisma.cashierSession.update({
-      where: { id: sessionId },
+      where: { id: session.id },
       data: {
         status: 'CLOSED',
         closedAt: new Date(),
-        ...totals,
+        closingCashAmount,
+        theoreticalCashAmount,
+        cashDifference,
+        totalRevenue,
+        totalVolume,
+        totalTransactions: transactions.length,
+        cashAmount,
+        waveAmount,
+        orangeMoneyAmount,
+        notes: notes || null,
       },
       include: {
         attendant: {
@@ -200,23 +223,17 @@ class CashierService {
             id: true,
             firstName: true,
             lastName: true,
-            email: true,
-          },
+            email: true
+          }
         },
-        station: true,
-        transactions: {
-          where: {
-            status: 'COMPLETED',
-          },
-          include: {
-            nozzle: {
-              include: {
-                pump: true,
-              },
-            },
-          },
+        station: {
+          select: {
+            id: true,
+            name: true,
+            code: true
+          }
         },
-      },
+      }
     });
 
     return closedSession;
@@ -302,6 +319,59 @@ class CashierService {
     return {
       ...session,
       paymentBreakdown,
+    };
+  }
+
+  /**
+   * Get session summary for a station
+   * Returns current active session and last closed session info
+   */
+  async getSessionSummary(stationId: string) {
+    // Get active session
+    const activeSession = await prisma.cashierSession.findFirst({
+      where: {
+        stationId,
+        status: 'OPEN',
+      },
+      include: {
+        attendant: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+        station: true,
+      },
+    });
+
+    // Get last closed session
+    const lastClosedSession = await prisma.cashierSession.findFirst({
+      where: {
+        stationId,
+        status: 'CLOSED',
+      },
+      orderBy: { closedAt: 'desc' },
+      include: {
+        attendant: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    // Current cash amount in drawer
+    const currentCashAmount = lastClosedSession?.closingCashAmount || 0;
+
+    return {
+      activeSession,
+      lastClosedSession,
+      currentCashAmount,
+      hasActiveSession: !!activeSession,
     };
   }
 }
